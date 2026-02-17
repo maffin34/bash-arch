@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Скрипт автоматической установки Arch Linux v1.4
+# Скрипт автоматической установки Arch Linux v1.5
 # По инструкции из "Дневник UNIX'оида"
 # https://t.me/thmUNIX | https://youtube.com/@thmUNIX
 
@@ -65,16 +65,20 @@ step "Шаг 2: Настройка пакетного менеджера"
 # Проверка Reflector
 info "Проверка зеркал Reflector..."
 if ! grep -q "^Server" /etc/pacman.d/mirrorlist; then
-    warning "Reflector не сгенерировал список зеркал"
-    info "Используем зеркала вручную..."
-    cat > /etc/pacman.d/mirrorlist << 'EOF'
-## Russia
-Server = https://mirror.yandex.ru/archlinux/$repo/os/$arch
-Server = https://mirrors.powernet.com.ru/archlinux/$repo/os/$arch
-## Germany
-Server = https://ftp.fau.de/archlinux/$repo/os/$arch
-Server = https://mirror.netcologne.de/archlinux/$repo/os/$arch
-EOF
+    warning "Reflector не сгенерировал список зеркал!"
+    echo ""
+    echo "Сейчас откроется файл /etc/pacman.d/mirrorlist"
+    echo "Раскомментируйте нужные зеркала убрав # в начале строки"
+    echo "После этого сохраните файл: Ctrl+O → Enter → Ctrl+X"
+    echo ""
+    read -p "Нажмите Enter для открытия редактора..."
+    nano /etc/pacman.d/mirrorlist
+
+    # Повторная проверка после редактирования
+    if ! grep -q "^Server" /etc/pacman.d/mirrorlist; then
+        error "Зеркала не выбраны! Раскомментируйте хотя бы одно зеркало"
+    fi
+    info "Зеркала успешно настроены"
 else
     info "Reflector успешно сгенерировал зеркала"
 fi
@@ -96,8 +100,9 @@ echo "Выбор типа установки:"
 echo "  1) Полная установка (УДАЛИТ ВСЕ ДАННЫЕ на выбранном диске)"
 echo "  2) Dual-boot с Windows (общий EFI раздел)"
 echo "  3) Рядом с Windows (отдельный EFI раздел)"
+echo "  4) Ручная разметка через cfdisk"
 echo ""
-read -p "Выберите вариант (1-3): " INSTALL_TYPE
+read -p "Выберите вариант (1-4): " INSTALL_TYPE
 
 INSTALL_MODE=""
 case $INSTALL_TYPE in
@@ -112,6 +117,10 @@ case $INSTALL_TYPE in
     3)
         INSTALL_MODE="dualboot-separate"
         info "Режим: Dual-boot с отдельным EFI"
+        ;;
+    4)
+        INSTALL_MODE="manual"
+        info "Режим: Ручная разметка через cfdisk"
         ;;
     *)
         error "Неверный выбор режима установки"
@@ -138,6 +147,66 @@ if [ "$INSTALL_MODE" = "dualboot-shared" ] || [ "$INSTALL_MODE" = "dualboot-sepa
     read -p "Вы освободили место на диске? (yes/no): " FREED_SPACE
     if [ "$FREED_SPACE" != "yes" ]; then
         error "Сначала освободите место в Windows, затем запустите скрипт снова"
+    fi
+fi
+
+# Для ручного режима запускаем cfdisk
+if [ "$INSTALL_MODE" = "manual" ]; then
+    echo ""
+    echo -e "${YELLOW}============================================${NC}"
+    echo -e "${YELLOW}  Ручная разметка диска через cfdisk${NC}"
+    echo -e "${YELLOW}============================================${NC}"
+    echo ""
+    echo "Инструкция:"
+    echo "  1. Создайте EFI раздел:"
+    echo "     → New → размер 1G → тип: EFI System"
+    echo "  2. Создайте root раздел:"
+    echo "     → New → остаток места → тип: Linux filesystem"
+    echo "  3. Нажмите Write для записи разделов"
+    echo "  4. Нажмите Quit для выхода"
+    echo ""
+    warning "ВАЖНО: Запомните имена разделов! (например: sda1, sda2)"
+    echo ""
+    read -p "Нажмите Enter для запуска cfdisk..."
+    
+    cfdisk "$DISK"
+    
+    echo ""
+    info "Обновлённая разметка диска:"
+    lsblk "$DISK"
+    echo ""
+    
+    read -p "Введите EFI раздел (например, /dev/sda1): " EFI_PART
+    if [ ! -b "$EFI_PART" ]; then
+        error "Раздел $EFI_PART не найден"
+    fi
+    
+    read -p "Введите root раздел (например, /dev/sda2): " ROOT_PART
+    if [ ! -b "$ROOT_PART" ]; then
+        error "Раздел $ROOT_PART не найден"
+    fi
+    
+    # Проверяем не одинаковые ли разделы
+    if [ "$EFI_PART" = "$ROOT_PART" ]; then
+        error "EFI и root разделы не могут быть одинаковыми!"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}Проверьте выбранные разделы:${NC}"
+    echo "  EFI:  $EFI_PART"
+    echo "  Root: $ROOT_PART"
+    echo ""
+    
+    read -p "Форматировать EFI раздел? (yes/no, если это существующий EFI Windows - выберите no): " FMT_EFI
+    if [ "$FMT_EFI" = "yes" ]; then
+        FORMAT_EFI=true
+    else
+        FORMAT_EFI=false
+    fi
+    
+    read -p "Всё верно? Продолжить? (yes/no): " MANUAL_CONFIRM
+    if [ "$MANUAL_CONFIRM" != "yes" ]; then
+        error "Установка отменена"
     fi
 fi
 
@@ -258,7 +327,6 @@ fi
 step "Шаг 3: Разметка диска"
 
 if [ "$INSTALL_MODE" = "full" ]; then
-    # ============ РЕЖИМ 1: Полная установка ============
     info "Очистка диска $DISK..."
     wipefs -af "$DISK"
     sgdisk -Z "$DISK"
@@ -372,6 +440,11 @@ elif [ "$INSTALL_MODE" = "dualboot-separate" ]; then
     FORMAT_EFI=true
     info "Создан EFI раздел: $EFI_PART"
     info "Создан root раздел: $ROOT_PART"
+elif [ "$INSTALL_MODE" = "manual" ]; then
+    # ============ РЕЖИМ 4: Ручная разметка (разделы уже созданы) ============
+    info "Используются разделы из ручной разметки"
+    info "EFI раздел: $EFI_PART"
+    info "Root раздел: $ROOT_PART"
 fi
 
 info "Разделы созданы:"
@@ -605,6 +678,8 @@ if [ "$INSTALL_MODE" = "dualboot-shared" ]; then
     echo "  • Режим: Dual-boot с Windows (общий EFI)"
 elif [ "$INSTALL_MODE" = "dualboot-separate" ]; then
     echo "  • Режим: Dual-boot с Windows (отдельный EFI)"
+elif [ "$INSTALL_MODE" = "manual" ]; then
+    echo "  • Режим: Ручная разметка через cfdisk"
 else
     echo "  • Режим: Полная установка"
 fi
