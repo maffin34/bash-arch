@@ -88,6 +88,14 @@ info "Настройка ParallelDownloads = 15..."
 sed -i 's/^#ParallelDownloads.*/ParallelDownloads = 15/' /etc/pacman.conf
 grep -q "^ParallelDownloads" /etc/pacman.conf || echo "ParallelDownloads = 15" >> /etc/pacman.conf
 
+# Включение репозитория multilib (нужен для lib32 пакетов)
+info "Включение репозитория multilib..."
+sed -i '/^#\[multilib\]/{n;s/^#Include/Include/}' /etc/pacman.conf
+sed -i 's/^#\[multilib\]/\[multilib\]/' /etc/pacman.conf
+
+# Обновляем базу данных пакетов
+pacman -Sy
+
 # ============ ЗАПРОС ПАРАМЕТРОВ ============
 step "Сбор информации для установки"
 
@@ -298,11 +306,11 @@ case $DE_CHOICE in
         ;;
     2)
         DE_NAME="KDE Plasma"
-        DE_PACKAGES="plasma-desktop plasma-workspace kwin systemsettings plasma-nm plasma-pa powerdevil bluedevil kscreen konsole dolphin kate ark spectacle gwenview okular breeze breeze-gtk kdeplasma-addons plasma-wayland-session xwaylandvideobridge"
+        DE_PACKAGES="plasma-desktop plasma-workspace kwin systemsettings plasma-nm plasma-pa powerdevil bluedevil kscreen konsole dolphin kate ark spectacle gwenview okular breeze breeze-gtk kdeplasma-addons"
         ;;
     3)
         DE_NAME="Hyprland"
-        DE_PACKAGES="hyprland xdg-desktop-portal-hyprland xwaylandvideobridge kitty dolphin qt5ct qt6ct"
+        DE_PACKAGES="hyprland xdg-desktop-portal-hyprland kitty dolphin qt5ct qt6ct"
         ;;
     4)
         DE_NAME="Niri"
